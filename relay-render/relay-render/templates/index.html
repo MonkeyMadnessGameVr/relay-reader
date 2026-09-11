@@ -15,7 +15,7 @@
   <header class="header">
     <div class="masthead">
       <a class="brand" href="/" aria-label="Relay home"><span class="brand-icon">↗</span>relay<span class="brand-divider"></span><span class="brand-label">PERSONAL READER</span></a>
-      <div class="header-actions"><span id="health" class="health">Connecting…</span><button id="bookmarks-toggle" class="quiet-button" aria-expanded="false" aria-controls="bookmarks-panel"><span aria-hidden="true">☆</span> Bookmarks</button>{% if embed_session %}<form action="/embed/logout" method="post"><button class="quiet-button" type="submit">Sign out</button></form>{% endif %}</div>
+      <div class="header-actions"><span id="health" class="health">Connecting…</span><button id="bookmarks-toggle" class="quiet-button" aria-expanded="false" aria-controls="bookmarks-panel"><span aria-hidden="true">☆</span> Bookmarks</button>{% if embed_session %}<form action="/embed/logout" method="post"><input type="hidden" name="csrf_token" value="{{ logout_csrf_token }}"><button class="quiet-button" type="submit">Sign out</button></form>{% endif %}</div>
     </div>
     <div class="toolbar">
       <nav aria-label="Page navigation">

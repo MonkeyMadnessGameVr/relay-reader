@@ -57,6 +57,22 @@ def embed_serializer():
     return URLSafeTimedSerializer(app.config["AUTH_KEY"], salt="relay-embed-session-v1")
 
 
+def embed_csrf_serializer():
+    return URLSafeTimedSerializer(app.config["AUTH_KEY"], salt="relay-embed-form-v1")
+
+
+def embed_csrf_token(action):
+    return embed_csrf_serializer().dumps({"action": action})
+
+
+def valid_embed_csrf(action):
+    try:
+        value = embed_csrf_serializer().loads(request.form.get("csrf_token", ""), max_age=600)
+        return value == {"action": action}
+    except (BadSignature, SignatureExpired):
+        return False
+
+
 def embed_authenticated():
     if not app.config["GOOGLE_SITES_EMBED"] or not app.config["AUTH_KEY"]:
         return False
@@ -292,24 +308,27 @@ def embed():
         return "Google Sites embedding is not enabled.", 404
     if embed_authenticated():
         return redirect("/")
-    return render_template("embed_login.html", message="", standalone_url=gateway_origin())
+    return render_template("embed_login.html", message="", standalone_url=gateway_origin(),
+                           csrf_token=embed_csrf_token("login"))
 
 
 @app.route("/embed/login", methods=["POST"])
 def embed_login():
     if not app.config["GOOGLE_SITES_EMBED"]:
         return "Google Sites embedding is not enabled.", 404
-    # Forms run at the Relay origin even when Google Sites is the outer page.
-    # Reject opaque or third-party submitters instead of accepting login CSRF.
-    if request.headers.get("Origin") != gateway_origin():
-        return "Open the published Google Site or Relay directly to sign in.", 403
+    # Google Sites deliberately gives custom-code embeds an opaque origin, so
+    # browsers send `Origin: null`. A signed one-use-purpose token protects the
+    # form without depending on an origin header the embed cannot preserve.
+    if not valid_embed_csrf("login"):
+        return "This sign-in form expired. Reload the Google Sites page and try again.", 403
     now, client = time.monotonic(), ("embed-login", request.remote_addr)
     with rate_lock:
         window = rate_windows.setdefault(client, deque())
         while window and window[0] < now - 60:
             window.popleft()
         if len(window) >= 10:
-            return render_template("embed_login.html", message="Too many attempts. Wait a minute and try again.", standalone_url=gateway_origin()), 429
+            return render_template("embed_login.html", message="Too many attempts. Wait a minute and try again.",
+                                   standalone_url=gateway_origin(), csrf_token=embed_csrf_token("login")), 429
         window.append(now)
         rate_windows.move_to_end(client)
         if len(rate_windows) > 1024:
@@ -317,7 +336,8 @@ def embed_login():
     supplied = request.form.get("password", "")
     key = app.config["AUTH_KEY"]
     if not key or not secrets.compare_digest(supplied.encode(), key.encode()):
-        return render_template("embed_login.html", message="That password did not match. Try again.", standalone_url=gateway_origin()), 401
+        return render_template("embed_login.html", message="That password did not match. Try again.",
+                               standalone_url=gateway_origin(), csrf_token=embed_csrf_token("login")), 401
     return embed_cookie(redirect("/", code=303), embed_serializer().dumps({"reader": True}), EMBED_SESSION_SECONDS)
 
 
@@ -325,8 +345,8 @@ def embed_login():
 def embed_logout():
     if not app.config["GOOGLE_SITES_EMBED"]:
         return "Google Sites embedding is not enabled.", 404
-    if request.headers.get("Origin") != gateway_origin():
-        return "Invalid form origin.", 403
+    if not valid_embed_csrf("logout"):
+        return "This sign-out form expired. Reload Relay and try again.", 403
     return embed_cookie(redirect("/embed", code=303), "", 0)
 
 
@@ -436,7 +456,10 @@ def document_response(html, nonce, status=200):
 
 @app.route("/")
 def index():
-    return render_template("index.html", auth_enabled=bool(app.config["AUTH_KEY"]), hosted_mode=app.config["HOSTED_MODE"], embed_session=embed_authenticated())
+    embed_session = embed_authenticated()
+    return render_template("index.html", auth_enabled=bool(app.config["AUTH_KEY"]),
+                           hosted_mode=app.config["HOSTED_MODE"], embed_session=embed_session,
+                           logout_csrf_token=embed_csrf_token("logout") if embed_session else "")
 
 
 @app.route("/proxy")

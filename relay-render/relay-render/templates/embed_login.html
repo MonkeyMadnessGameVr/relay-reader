@@ -6,6 +6,7 @@
 <div class="search-intro"><span class="eyebrow">RELAY PERSONAL READER</span><h1>Sign in to Relay</h1><p>Enter your gateway password to open the reader.</p></div>
 {% if message %}<p class="notice" role="alert">{{ message }}</p>{% endif %}
 <form action="/embed/login" method="post" class="search-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <label class="sr-only" for="password">Gateway password</label>
 <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Gateway password" required maxlength="1024">
 <button type="submit">Sign in</button></form>

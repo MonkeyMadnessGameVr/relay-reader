@@ -16,7 +16,7 @@ import app as gateway
 class GatewayTests(unittest.TestCase):
     def setUp(self):
         gateway.app.config.update(TESTING=True, AUTH_KEY="", ALLOW_UNAUTHENTICATED_REMOTE=False,
-                                  HOSTED_MODE=False, PUBLIC_BASE_URL="", DEBUG=False)
+                                  HOSTED_MODE=False, PUBLIC_BASE_URL="", DEBUG=False, GOOGLE_SITES_EMBED=False)
         gateway.search_cache.clear()
         gateway.rate_windows.clear()
         self.client = gateway.app.test_client()
@@ -208,6 +208,78 @@ class GatewayTests(unittest.TestCase):
         result = subprocess.run([sys.executable, "-c", "import config; print(config.HOME_PORT, config.HOSTED_MODE, config.PUBLIC_BASE_URL, config.MAX_RESPONSE_BYTES, config.MAX_CONCURRENT_FETCHES)"],
                                 env=environment, capture_output=True, text=True, check=True)
         self.assertEqual(result.stdout.strip(), "12345 True https://relay-test.onrender.com 4194304 2")
+
+    def enable_embed(self):
+        gateway.app.config.update(GOOGLE_SITES_EMBED=True, HOSTED_MODE=True,
+                                  AUTH_KEY="test-only-password-12345", PUBLIC_BASE_URL="https://relay-test.onrender.com")
+        return "https://relay-test.onrender.com"
+
+    def test_embed_login_cookie_logout_and_protected_routes(self):
+        origin = self.enable_embed()
+        login = self.client.get("/embed", base_url=origin)
+        self.assertEqual(login.status_code, 200)
+        self.assertIn(b"Gateway password", login.data)
+        self.assertNotIn("WWW-Authenticate", login.headers)
+        self.assertEqual(self.client.get("/search?q=test", base_url=origin).status_code, 401)
+        result = self.client.post("/embed/login", base_url=origin, headers={"Origin": origin},
+                                  data={"password": "test-only-password-12345"})
+        self.assertEqual(result.status_code, 303)
+        cookie = result.headers["Set-Cookie"]
+        for attribute in ("Secure", "HttpOnly", "SameSite=None", "Partitioned", "Path=/", "Max-Age=3600"):
+            self.assertIn(attribute, cookie)
+        self.assertNotIn("test-only-password", cookie)
+        self.assertEqual(self.client.get("/status", base_url=origin).status_code, 200)
+        self.assertIn(b"Sign out", self.client.get("/", base_url=origin).data)
+        logout = self.client.post("/embed/logout", base_url=origin, headers={"Origin": origin})
+        self.assertEqual(logout.status_code, 303)
+        self.assertIn("Max-Age=0", logout.headers["Set-Cookie"])
+        self.assertEqual(self.client.get("/status", base_url=origin).status_code, 401)
+
+    def test_embed_login_rejects_wrong_password_origin_and_limits_attempts(self):
+        origin = self.enable_embed()
+        for bad_origin in ("https://sites.google.com", "https://evil.example", "null"):
+            response = self.client.post("/embed/login", base_url=origin, headers={"Origin": bad_origin},
+                                        data={"password": "test-only-password-12345"})
+            self.assertEqual(response.status_code, 403)
+            self.assertNotIn("Set-Cookie", response.headers)
+        for _ in range(10):
+            response = self.client.post("/embed/login", base_url=origin, headers={"Origin": origin}, data={"password": "wrong"})
+            self.assertEqual(response.status_code, 401)
+            self.assertNotIn("WWW-Authenticate", response.headers)
+        self.assertEqual(self.client.post("/embed/login", base_url=origin, headers={"Origin": origin},
+                                          data={"password": "wrong"}).status_code, 429)
+
+    def test_embed_ancestor_policy_applies_to_nested_reader(self):
+        origin = self.enable_embed()
+        login = self.client.get("/embed", base_url=origin)
+        self.assertIn("frame-ancestors 'self' https://sites.google.com https://*.googleusercontent.com", login.headers["Content-Security-Policy"])
+        with patch("app.fetch_url", return_value=(b"<p>Read me</p>", "text/html", "https://example.com", None)):
+            result = self.client.get("/proxy?url=https://example.com", base_url=origin,
+                                     headers={"X-Gateway-Key": "test-only-password-12345"})
+        self.assertIn("frame-ancestors 'self' https://sites.google.com https://*.googleusercontent.com", result.headers["Content-Security-Policy"])
+        self.assertIn("sandbox allow-scripts allow-forms", result.headers["Content-Security-Policy"])
+        self.assertNotIn("allow-same-origin", result.headers["Content-Security-Policy"])
+
+    def test_embed_mode_is_opt_in(self):
+        response = self.client.get("/")
+        self.assertNotIn("sites.google.com", response.headers["Content-Security-Policy"])
+        self.assertEqual(self.client.get("/embed").status_code, 404)
+        self.assertEqual(self.client.post("/embed/login").status_code, 404)
+
+    def test_embed_expired_or_tampered_cookie_is_rejected(self):
+        origin = self.enable_embed()
+        self.client.set_cookie(gateway.EMBED_COOKIE, "tampered", domain="relay-test.onrender.com")
+        self.assertEqual(self.client.get("/status", base_url=origin).status_code, 401)
+        with gateway.app.app_context():
+            with patch("itsdangerous.timed.time.time", return_value=1):
+                expired = gateway.embed_serializer().dumps({"reader": True})
+        self.client.set_cookie(gateway.EMBED_COOKIE, expired, domain="relay-test.onrender.com")
+        self.assertEqual(self.client.get("/status", base_url=origin).status_code, 401)
+
+    def test_embed_requires_https_and_password_even_outside_render(self):
+        settings = dict(gateway.app.config, GOOGLE_SITES_EMBED=True)
+        with self.assertRaises(RuntimeError):
+            gateway.config.validate_runtime_settings(settings)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,8 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, redirect
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from requests.adapters import HTTPAdapter
 from urllib3 import PoolManager
 from urllib3.connection import HTTPConnection, HTTPSConnection
@@ -37,6 +38,30 @@ cache_lock = threading.Lock()
 search_cache = OrderedDict()
 rate_lock = threading.Lock()
 rate_windows = OrderedDict()
+EMBED_COOKIE = "__Host-relay_embed"
+EMBED_SESSION_SECONDS = 3600
+
+
+def frame_ancestors():
+    # Google Sites may nest its URL embed in a Google-owned wrapper. Ancestor
+    # policy applies to EVERY parent, including the reader's nested content frame.
+    if app.config["GOOGLE_SITES_EMBED"]:
+        return "'self' https://sites.google.com https://*.googleusercontent.com"
+    return "'self'"
+
+
+def embed_serializer():
+    return URLSafeTimedSerializer(app.config["AUTH_KEY"], salt="relay-embed-session-v1")
+
+
+def embed_authenticated():
+    if not app.config["GOOGLE_SITES_EMBED"] or not app.config["AUTH_KEY"]:
+        return False
+    try:
+        return embed_serializer().loads(request.cookies.get(EMBED_COOKIE, ""),
+                                        max_age=EMBED_SESSION_SECONDS) == {"reader": True}
+    except (BadSignature, SignatureExpired):
+        return False
 
 
 class GatewayError(Exception):
@@ -182,6 +207,8 @@ def protect_gateway():
     # exposes only process health and never fetches content or returns settings.
     if request.endpoint == "healthz":
         return None
+    if app.config["GOOGLE_SITES_EMBED"] and request.endpoint in ("embed", "embed_login", "embed_logout", "static"):
+        return None
     key = app.config["AUTH_KEY"]
     if app.config["HOSTED_MODE"] and not key:
         return jsonify(error="Gateway authentication is not configured."), 503
@@ -190,7 +217,11 @@ def protect_gateway():
         supplied = request.headers.get("X-Gateway-Key", "")
         if auth and auth.type == "basic":
             supplied = auth.password or ""
-        if not secrets.compare_digest(supplied.encode(), key.encode()):
+        if not secrets.compare_digest(supplied.encode(), key.encode()) and not embed_authenticated():
+            if app.config["GOOGLE_SITES_EMBED"]:
+                if request.endpoint == "index":
+                    return redirect("/embed")
+                return jsonify(error="Sign in to Relay again; the embedded session may have expired."), 401
             return Response("Gateway key required. Use any username and your gateway key as the password.",
                             status=401, headers={"WWW-Authenticate": 'Basic realm="Relay", charset="UTF-8"'})
     elif not app.config["ALLOW_UNAUTHENTICATED_REMOTE"]:
@@ -221,7 +252,7 @@ def security_headers(response):
     response.headers["Cache-Control"] = "no-store"
     if app.config["HOSTED_MODE"]:
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
-    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors " + frame_ancestors())
     origin = request.headers.get("Origin")
     allowed = app.config["ALLOWED_ORIGINS"]
     if allowed == "*":
@@ -241,6 +272,59 @@ def gateway_origin():
     and document bases. Local mode continues using the incoming local origin.
     """
     return app.config["PUBLIC_BASE_URL"] or request.host_url.rstrip("/")
+
+
+def embed_cookie(response, value, max_age):
+    # Partitioned cookies work independently under each top-level site. Appending
+    # the attribute also supports local Werkzeug releases predating its keyword.
+    response.set_cookie(EMBED_COOKIE, value, max_age=max_age, secure=True,
+                        httponly=True, samesite="None", path="/")
+    response.headers["Set-Cookie"] += "; Partitioned"
+    return response
+
+
+@app.route("/embed")
+def embed():
+    if not app.config["GOOGLE_SITES_EMBED"]:
+        return "Google Sites embedding is not enabled.", 404
+    if embed_authenticated():
+        return redirect("/")
+    return render_template("embed_login.html", message="", standalone_url=gateway_origin())
+
+
+@app.route("/embed/login", methods=["POST"])
+def embed_login():
+    if not app.config["GOOGLE_SITES_EMBED"]:
+        return "Google Sites embedding is not enabled.", 404
+    # Forms run at the Relay origin even when Google Sites is the outer page.
+    # Reject opaque or third-party submitters instead of accepting login CSRF.
+    if request.headers.get("Origin") != gateway_origin():
+        return "Open the published Google Site or Relay directly to sign in.", 403
+    now, client = time.monotonic(), ("embed-login", request.remote_addr)
+    with rate_lock:
+        window = rate_windows.setdefault(client, deque())
+        while window and window[0] < now - 60:
+            window.popleft()
+        if len(window) >= 10:
+            return render_template("embed_login.html", message="Too many attempts. Wait a minute and try again.", standalone_url=gateway_origin()), 429
+        window.append(now)
+        rate_windows.move_to_end(client)
+        if len(rate_windows) > 1024:
+            rate_windows.popitem(last=False)
+    supplied = request.form.get("password", "")
+    key = app.config["AUTH_KEY"]
+    if not key or not secrets.compare_digest(supplied.encode(), key.encode()):
+        return render_template("embed_login.html", message="That password did not match. Try again.", standalone_url=gateway_origin()), 401
+    return embed_cookie(redirect("/", code=303), embed_serializer().dumps({"reader": True}), EMBED_SESSION_SECONDS)
+
+
+@app.route("/embed/logout", methods=["POST"])
+def embed_logout():
+    if not app.config["GOOGLE_SITES_EMBED"]:
+        return "Google Sites embedding is not enabled.", 404
+    if request.headers.get("Origin") != gateway_origin():
+        return "Invalid form origin.", 403
+    return embed_cookie(redirect("/embed", code=303), "", 0)
 
 
 def proxy_link(raw, base):
@@ -342,14 +426,14 @@ def document_response(html, nonce, status=200):
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'nonce-{}'; style-src {} 'unsafe-inline'; "
         "img-src {} data:; font-src {} data:; media-src {}; connect-src 'none'; "
-        "base-uri {}; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-forms"
-    ).format(nonce, origin, origin, origin, origin, origin)
+        "base-uri {}; form-action 'none'; frame-ancestors {}; sandbox allow-scripts allow-forms"
+    ).format(nonce, origin, origin, origin, origin, origin, frame_ancestors())
     return response
 
 
 @app.route("/")
 def index():
-    return render_template("index.html", auth_enabled=bool(app.config["AUTH_KEY"]), hosted_mode=app.config["HOSTED_MODE"])
+    return render_template("index.html", auth_enabled=bool(app.config["AUTH_KEY"]), hosted_mode=app.config["HOSTED_MODE"], embed_session=embed_authenticated())
 
 
 @app.route("/proxy")

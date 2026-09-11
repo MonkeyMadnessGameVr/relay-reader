@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parents[1]
 output = root / "dist" / "relay-render"
 output.mkdir(parents=True, exist_ok=True)
 files = [root / name for name in ("app.py", "config.py", "requirements.txt", "render.yaml",
-                                  ".python-version", ".gitignore", "README.md", "RENDER_SETUP.md")]
+                                  ".python-version", ".gitignore", "README.md", "RENDER_SETUP.md", "GOOGLE_SITES_SETUP.md")]
 for folder in ("templates", "static"):
     files.extend(path for path in (root / folder).rglob("*") if path.is_file())
 files.append(root / "tests" / "test_gateway.py")
@@ -26,3 +26,10 @@ with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zipped:
         zipped.write(source, str(Path("relay-render") / relative))
 print("Upload folder: {}".format(output))
 print("Archive: {} ({} files)".format(archive, len(files)))
+update_names = ["app.py", "config.py", "templates/index.html", "templates/embed_login.html",
+                "static/css/style.css", "tests/test_gateway.py", "scripts/package_render.py",
+                "tests/render_smoke.py", "GOOGLE_SITES_SETUP.md", "README.md"]
+with ZipFile(root / "dist" / "Relay-Google-Sites-Update.zip", "w", compression=ZIP_DEFLATED) as zipped:
+    for name in update_names:
+        zipped.write(root / name, name)
+print("Google Sites update ZIP created (files at archive root for existing repository upload).")

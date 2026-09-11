@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Relay</title><link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}"></head>
+<body><main class="search-view embed-login">
+<div class="search-intro"><span class="eyebrow">RELAY PERSONAL READER</span><h1>Sign in to Relay</h1><p>Enter your gateway password to open the reader.</p></div>
+{% if message %}<p class="notice" role="alert">{{ message }}</p>{% endif %}
+<form action="/embed/login" method="post" class="search-form">
+<label class="sr-only" for="password">Gateway password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" placeholder="Gateway password" required maxlength="1024">
+<button type="submit">Sign in</button></form>
+<p class="small-note">Your session lasts one hour. The password is sent only to your Relay server.</p>
+<p class="small-note">If sign-in returns to this screen, the browser may be blocking embedded cookies. <a class="standalone-link" href="{{ standalone_url }}" target="_blank" rel="noopener noreferrer">Open Relay in a new tab ↗</a></p>
+</main></body></html>

@@ -1,12 +1,14 @@
 # Relay — a personal web reader
 
+To try the existing Render reader inside **Google Sites**, see [GOOGLE_SITES_SETUP.md](GOOGLE_SITES_SETUP.md). `GOOGLE_SITES_EMBED=true` opts into Google frame permissions and a one-hour embedded login session; it is disabled by default. Render remains the backend.
+
 **For the Render setup, start with [RENDER_SETUP.md](RENDER_SETUP.md).** It explains the private GitHub upload, Render deployment, login, and Chromebook test. Once deployed, the home PC and router are not involved. `render.yaml` selects a free Python web service with HTTPS supplied by Render.
 
 Render mode reads `PORT` and `RENDER_EXTERNAL_URL`, requires a password of at least 16 characters, and refuses debug or unauthenticated operation. `/healthz` is a public process-health probe; the reader and `/status` require authentication. Canonical HTTPS base URLs and resource policies work behind Render's TLS terminator without trusting arbitrary forwarded headers. Individual resources are capped at 4 MB with two simultaneous upstream fetches on hosted instances. The interface does not send periodic keep-alive requests.
 
 The included `scripts/package_render.py` creates `dist/Relay-Render.zip` and a clean upload folder from an explicit allowlist; no `.venv`, `.env`, or unrelated local files are included. The hosted service has not been deployed merely by preparing these files.
 
-Validation: 20 automated backend checks cover the original reader plus hosted authentication, health checks, port selection, and HTTPS rewriting. `python tests/render_smoke.py` starts a temporary real server in Render mode, checks authenticated access, fetches `https://example.com`, and shuts it down. This local smoke check passed; actual Render deployment and Chromebook access still need the account setup and device test in the guide.
+Validation: 26 automated backend checks cover the original reader, hosted authentication, health checks, port selection, HTTPS rewriting, and Google Sites embedding/login. `python tests/render_smoke.py` starts a temporary real server in Render mode, checks authenticated access, fetches `https://example.com`, and shuts it down. Actual Google Sites embedding and Chromebook cookie behavior still need the published-site test in the guide.
 
 The sections below describe the alternative local/home-PC setup. **Skip home-router forwarding when using Render.**
 

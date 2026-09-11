@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlsplit
 
 HOSTED_MODE = os.environ.get("RENDER", "false").lower() == "true" or os.environ.get("HOSTED_MODE", "false").lower() == "true"
+GOOGLE_SITES_EMBED = os.environ.get("GOOGLE_SITES_EMBED", "false").lower() == "true"
 # Render supplies PORT; HOME_PORT remains the local-development fallback.
 HOME_PORT = int(os.environ.get("PORT", os.environ.get("HOME_PORT", "5000")))
 DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
@@ -25,6 +26,8 @@ RATE_LIMIT_PER_MINUTE = 240
 
 def validate_runtime_settings(settings):
     """Stop a misconfigured hosted deployment before it can become an open proxy."""
+    if settings.get("GOOGLE_SITES_EMBED") and (len(settings["AUTH_KEY"]) < 16 or not settings["PUBLIC_BASE_URL"]):
+        raise RuntimeError("Google Sites embedding requires a password of at least 16 characters and a public HTTPS URL.")
     if settings["HOSTED_MODE"]:
         if len(settings["AUTH_KEY"]) < 16:
             raise RuntimeError("Set GATEWAY_AUTH_KEY to a new password of at least 16 characters in Render Environment settings.")

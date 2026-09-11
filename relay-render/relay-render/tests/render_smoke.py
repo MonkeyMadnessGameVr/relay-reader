@@ -21,7 +21,7 @@ def main():
         port = listener.getsockname()[1]
     key = secrets.token_urlsafe(32)
     origin = "https://relay-smoke-test.onrender.com"
-    environment = dict(os.environ, RENDER="true", HOSTED_MODE="true", PORT=str(port),
+    environment = dict(os.environ, RENDER="true", HOSTED_MODE="true", GOOGLE_SITES_EMBED="false", PORT=str(port),
                        RENDER_EXTERNAL_URL=origin, PUBLIC_BASE_URL=origin,
                        GATEWAY_AUTH_KEY=key, DEBUG="false", ALLOW_UNAUTHENTICATED_REMOTE="false")
     process = subprocess.Popen([sys.executable, "app.py"], cwd=str(root), env=environment,

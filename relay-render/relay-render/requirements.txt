@@ -1,0 +1,7 @@
+# Bounds retain Python 3.8 support. Pip selects compatible releases on older Python.
+Flask>=3.0.3,<3.2
+requests>=2.32.4,<3
+beautifulsoup4>=4.12.3,<5
+urllib3>=2.2.3,<3
+waitress>=3.0.2,<4; python_version >= "3.9"
+cheroot>=11.1.2,<12; python_version < "3.9"

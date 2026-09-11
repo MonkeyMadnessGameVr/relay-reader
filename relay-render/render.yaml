@@ -1,0 +1,19 @@
+# Import this repository as a Render Blueprint. No home PC or router is required.
+services:
+  - type: web
+    name: relay-reader
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /healthz
+    autoDeployTrigger: off
+    envVars:
+      - key: GATEWAY_AUTH_KEY
+        sync: false # Render prompts you for a password; never commit it to GitHub.
+      - key: HOSTED_MODE
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      - key: ALLOW_UNAUTHENTICATED_REMOTE
+        value: "false"

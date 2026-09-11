@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Search and read web content through your personal gateway.">
+  <title>Relay · Personal reader</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+</head>
+<body>
+  <!-- Navigation stays on screen while the content surface changes. -->
+  <header class="header">
+    <div class="masthead">
+      <a class="brand" href="/" aria-label="Relay home"><span class="brand-icon">↗</span>relay<span class="brand-divider"></span><span class="brand-label">PERSONAL READER</span></a>
+      <div class="header-actions"><span id="health" class="health">Connecting…</span><button id="bookmarks-toggle" class="quiet-button" aria-expanded="false" aria-controls="bookmarks-panel"><span aria-hidden="true">☆</span> Bookmarks</button></div>
+    </div>
+    <div class="toolbar">
+      <nav aria-label="Page navigation">
+        <button id="back" class="icon-button" title="Back" aria-label="Back" disabled>←</button>
+        <button id="forward" class="icon-button" title="Forward" aria-label="Forward" disabled>→</button>
+        <button id="refresh" class="icon-button" title="Refresh" aria-label="Refresh" disabled>↻</button>
+        <button id="home" class="icon-button" title="Home" aria-label="Home">⌂</button>
+      </nav>
+      <form id="address-form" class="address-form">
+        <span class="address-mark" aria-hidden="true">◎</span>
+        <label class="sr-only" for="address">Website address</label><input id="address" type="text" placeholder="Enter a website URL" spellcheck="false" autocomplete="off" inputmode="url" required>
+        <button id="star" class="icon-button" type="button" aria-label="Bookmark current page" title="Bookmark current page" disabled>☆</button>
+        <button class="go-button" type="submit">Go <span aria-hidden="true">↗</span></button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <noscript><p class="notice">JavaScript is disabled. You can still read a page using <code>/proxy?url=https://example.com</code>. Search cards and bookmarks require same-origin JavaScript.</p></noscript>
+    <section id="search-view" class="search-view" aria-label="Web search">
+      <div class="search-intro"><span class="eyebrow">YOUR SPACE TO EXPLORE</span><h1>Where to next<span>?</span></h1><p>Search the web or open a website through your gateway.</p></div>
+      <form id="search-form" class="search-form" role="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+        <label class="sr-only" for="query">Search the web</label><input id="query" placeholder="Search the web..." maxlength="500" autocomplete="off" required>
+        <button type="submit" id="search-button">Search <span aria-hidden="true">↗</span></button>
+      </form>
+      <div class="search-meta"><span>Results from DuckDuckGo</span><span>Fetched by your gateway</span></div>
+      <div id="search-progress" class="search-progress" role="status" hidden><span class="spinner"></span> Searching the web…</div>
+      <div id="results-heading" class="section-label" hidden></div>
+      <div id="results" class="results" aria-live="polite"></div>
+      <section id="saved-home" class="saved-home" aria-label="Saved pages"><div class="section-label">SAVED PAGES <span>ON THIS DEVICE</span></div><div id="saved-pages" class="saved-pages"></div></section>
+      <div class="reader-note"><span aria-hidden="true">▤</span><p>Built for reading. Interactive apps, sign-ins, and streaming may be unavailable.</p></div>
+    </section>
+
+    <!-- No allow-same-origin: fetched content cannot read the outer UI or storage. -->
+    <section id="viewer" class="viewer" aria-label="Content viewer" hidden>
+      <div class="viewer-bar"><span id="page-title">Web content</span><span class="viewer-mode">READER VIEW</span></div>
+      <div id="wikipedia-notice" class="wikipedia-notice" hidden>This is a mobile Wikipedia page. <button id="desktop-wikipedia">Use desktop version ↗</button></div>
+      <div class="frame-wrap"><iframe id="content-frame" title="Proxied web content" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer"></iframe>
+        <div id="loading-overlay" class="loading-overlay" role="status" hidden><span class="spinner"></span><strong>Loading through your gateway…</strong></div>
+        <div id="viewer-error" class="viewer-error" role="alert" hidden><span class="error-symbol" aria-hidden="true">!</span><h2 id="viewer-error-title">Connection slow or blocked</h2><p id="viewer-error-message"></p><button id="retry" class="primary-button">Try again</button></div>
+      </div>
+    </section>
+  </main>
+
+  <footer><span><span class="footer-symbol" aria-hidden="true">↗</span> {{ 'Hosted on Render' if hosted_mode else 'Running locally' }}</span><span>{{ 'Key protected' if auth_enabled else 'Local access' }}<span class="footer-separator">/</span>Relay 1.1</span></footer>
+
+  <aside id="bookmarks-panel" class="bookmarks-panel" aria-label="Saved bookmarks" hidden>
+    <div class="panel-heading"><div><span class="eyebrow">YOUR COLLECTION</span><h2>Bookmarks</h2></div><button id="bookmarks-close" class="icon-button" aria-label="Close bookmarks">×</button></div>
+    <p id="storage-note" class="small-note">Saved in this browser.</p><div id="bookmark-list" class="bookmark-list"></div>
+    <div class="bookmark-tools"><button id="export-bookmarks" class="quiet-button">Export JSON ↓</button><button id="import-bookmarks" class="quiet-button">Import JSON ↑</button><input id="import-file" type="file" accept="application/json,.json" hidden></div>
+  </aside>
+
+  <dialog id="lightbox" class="lightbox" aria-labelledby="image-title"><div class="lightbox-header"><h2 id="image-title">Image viewer</h2><button id="close-lightbox" class="icon-button" aria-label="Close image">×</button></div><p id="image-status" role="status">Loading image…</p><img id="lightbox-image" alt="Image opened through your gateway"></dialog>
+</body>
+</html>

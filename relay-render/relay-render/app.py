@@ -46,7 +46,10 @@ def frame_ancestors():
     # Google Sites may nest its URL embed in a Google-owned wrapper. Ancestor
     # policy applies to EVERY parent, including the reader's nested content frame.
     if app.config["GOOGLE_SITES_EMBED"]:
-        return "'self' https://sites.google.com https://*.googleusercontent.com"
+        # Google Sites custom-code embeds can add a gstatic loader and a
+        # site-specific googleusercontent wrapper between the published Site
+        # and Relay. CSP checks every ancestor, so permit those Google origins.
+        return "'self' https://*.google.com https://*.googleusercontent.com https://www.gstatic.com"
     return "'self'"
 
 
